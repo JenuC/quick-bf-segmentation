@@ -1,0 +1,100 @@
+"""Segment every frame of a timelapse TIFF stack with micro-sam on an NVIDIA GPU.
+
+Same output as segment-microsam-stack.py, but runs on CUDA and sends several
+tiles through the model at once (--batch). micro-sam's tiled mode overlaps
+tiles by a halo and stitches cells that cross tile borders.
+
+Each frame is saved as soon as it finishes (<stack>_microsam_frames/t0000.tif),
+so an interrupted run resumes where it stopped. When all frames are done they
+are combined into <stack>_microsam_labels.tif next to the input.
+
+Setup on the GPU machine (installs CUDA builds of torch):
+    uv sync --extra gpu
+Always run with --extra gpu, or uv run switches torch back to the CPU build:
+    uv run --extra gpu segment-microsam-stack-gpu.py <stack.tif>
+        [--model vit_b_lm] [--tile 256] [--batch 8] [--frames 0:10]
+"""
+
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import tifffile as tf
+import torch
+from micro_sam.automatic_segmentation import (
+    get_predictor_and_segmenter,
+    automatic_instance_segmentation,
+)
+
+if not torch.cuda.is_available():
+    sys.exit(
+        f"No CUDA GPU visible to torch {torch.__version__}.\n"
+        "Install the CUDA build with `uv sync --extra gpu` and run with "
+        "`uv run --extra gpu ...`, or use segment-microsam-stack.py for CPU."
+    )
+print(f"Using GPU: {torch.cuda.get_device_name(0)} (torch {torch.__version__})")
+
+args = sys.argv[1:]
+
+
+def opt(name, default):
+    return args[args.index(name) + 1] if name in args else default
+
+
+path = Path(next(a for a in args if not a.startswith("--") and a not in
+                 {opt(o, None) for o in ("--model", "--tile", "--batch", "--frames")}))
+model_type = opt("--model", "vit_b_lm")
+tile = int(opt("--tile", 256))
+batch_size = int(opt("--batch", 8))
+halo = tile // 4
+
+with tf.TiffFile(path) as fid:
+    n_frames = len(fid.series[0].pages)
+frames = range(n_frames)
+if "--frames" in args:
+    start, stop = opt("--frames", ":").split(":")
+    frames = range(int(start or 0), min(int(stop or n_frames), n_frames))
+
+stem = path.name.removesuffix(".ome.tif").removesuffix(".tif")
+frame_dir = path.parent / f"{stem}_microsam_frames"
+frame_dir.mkdir(exist_ok=True)
+
+
+def to_uint8(img):
+    # Percentile scaling so bright debris doesn't squash the cell contrast
+    lo, hi = np.percentile(img, (0.5, 99.8))
+    return (np.clip((img - lo) / (hi - lo), 0, 1) * 255).astype(np.uint8)
+
+
+predictor, segmenter = get_predictor_and_segmenter(
+    model_type=model_type, device="cuda", is_tiled=True
+)
+
+for t in frames:
+    out = frame_dir / f"t{t:04d}.tif"
+    if out.exists():
+        continue
+    t0 = time.time()
+    img = to_uint8(tf.imread(path, key=t).astype(np.float32))
+    labels = automatic_instance_segmentation(
+        predictor=predictor,
+        segmenter=segmenter,
+        input_path=img,
+        ndim=2,
+        tile_shape=(tile, tile),
+        halo=(halo, halo),
+        batch_size=batch_size,
+        verbose=False,
+    )
+    tf.imwrite(out, labels.astype(np.uint16), compression="zlib")
+    print(f"frame {t + 1}/{n_frames}: {labels.max()} cells, {time.time() - t0:.0f}s", flush=True)
+
+done = sorted(frame_dir.glob("t*.tif"))
+if len(done) == n_frames:
+    stack = np.stack([tf.imread(f) for f in done])
+    out = path.parent / f"{stem}_microsam_labels.tif"
+    tf.imwrite(out, stack, imagej=True, metadata={"axes": "TYX"}, compression="zlib")
+    print(f"saved {out}")
+else:
+    print(f"{len(done)}/{n_frames} frames done; rerun to continue")

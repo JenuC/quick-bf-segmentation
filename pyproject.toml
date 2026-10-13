@@ -15,5 +15,21 @@ dependencies = [
     "tifffile>=2026.9.20",
 ]
 
+[project.optional-dependencies]
+# GPU machine: `uv sync --extra gpu` installs CUDA 12.6 builds of torch.
+# Plain `uv sync` keeps the CPU-only builds from PyPI.
+cpu = ["torch>=2.14.1", "torchvision>=0.29.1"]
+gpu = ["torch>=2.14.1", "torchvision>=0.29.1"]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "gpu" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [tool.uv.sources]
-micro-sam = { git = "https://github.com/computational-cell-analytics/micro-sam" }
+torch = [{ index = "pytorch-cu126", extra = "gpu" }]
+torchvision = [{ index = "pytorch-cu126", extra = "gpu" }]
+micro-sam = { git = "https://github.com/computational-cell-analytics/micro-sam", rev = "v1.8.14" }
