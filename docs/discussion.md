@@ -7,9 +7,10 @@ Machine used for development: Windows 11, CPU only (no GPU).
 
 - Four approaches were compared on a test image (`snap.tif`): a classical texture filter, Cellpose, StarDist and micro-sam.
 - **micro-sam (`vit_b_lm`) gave the best results** and was chosen for the timelapse, with Cellpose a close second.
-- The timelapse `justcells2d_brightfield_1/..._Pos0.ome.tif` (75 frames, 2048×2048, uint16) is segmented at full resolution in **512×512 tiles** with micro-sam: about **4.8 min per frame (~6 h for the stack)** on this CPU. The full run is in progress.
+- The timelapse `justcells2d_brightfield_1/..._Pos0.ome.tif` (75 frames, 2048×2048, uint16) is segmented at full resolution in **512×512 tiles** with micro-sam: about **4.8 min per frame (~6 h for the stack)** on this CPU. The full run is in progress (frames 1–3 done, 700–735 cells per frame).
 - Shrinking the frames to 512×512 or 1024×1024 before segmenting was tried and rejected: it misses most cells.
 - A GPU version of the script exists for faster processing on another machine.
+- Acquisition timing was checked from the Micro-Manager metadata with `parse-metadata.py`: the brightfield timelapse was imaged every **180 s (3 min)**, with no missing frames or irregular gaps.
 - Next step: link cells over time with TrackMate; see [tracking-plan.md](tracking-plan.md).
 
 ## Data
@@ -18,6 +19,32 @@ Machine used for development: Windows 11, CPU only (no GPU).
 |---|---|
 | `snap.tif` | 513×513 uint8 brightfield test image |
 | `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0.ome.tif` | Timelapse, 75 frames × 2048×2048 uint16 (TYX), 0.653 µm/pixel, one frame every 180 s (~3.7 h). The acquisition was planned for 100 frames but stopped at 75; tifffile warns about the missing files. |
+| `justcells2d_1/`, `justcells2d_2/` | Timelapses, 3 positions each, every 300 s, 0.6938 µm/pixel. Not segmented yet. |
+| `pollen1012/` | Single image, 1.0394 µm/pixel. Not segmented yet. |
+
+### Acquisition timing (`parse-metadata.py`)
+
+`parse-metadata.py` reads the Micro-Manager `*_metadata.txt` JSON next to each `.ome.tif`. It reports the planned interval (`Summary` → `Interval_ms`) and the actual one, from each frame's `ElapsedTime-ms`. It also flags missing frames and any gap more than 10% off the median.
+
+```
+uv run parse-metadata.py .                                   # every acquisition below a folder
+uv run parse-metadata.py justcells2d_brightfield_1 --csv     # also write per-frame times
+```
+
+`--csv` writes `<metadata>_times.csv` (columns `frame,elapsed_s,interval_s`). One has been written for the brightfield timelapse: `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0_metadata_times.csv`.
+
+Results (all acquisitions on 2026-10-12):
+
+| Acquisition | Start | Planned interval | Actual interval (median, range) | Frames | Duration | Pixel size |
+|---|---|---|---|---|---|---|
+| justcells2d_1 (Pos0–2) | 11:13 | 300 s | 300.0 s (299.9–300.15) | 10 of 45 | 0.75 h | 0.6938 µm |
+| justcells2d_2 (Pos0–2) | 12:03 | 300 s | 300.0 s (299.9–300.3) | 4 of 45 | 0.25 h | 0.6938 µm |
+| **justcells2d_brightfield_1 (Pos0)** | **12:40** | **180 s** | **180.00 s (179.88–180.11)** | **75 of 100** | **3.70 h** | **0.653 µm** |
+| pollen1012 (Pos0) | n/a | not set | single image | 1 | n/a | 1.0394 µm |
+
+- Timing is very regular. No acquisition has missing frames or irregular gaps.
+- All timelapses stopped before their planned number of frames.
+- The `justcells2d` acquisitions have a different pixel size (0.6938 µm, probably a different objective or binning) from the brightfield timelapse (0.653 µm). Tracking distances in µm carry over, but pixel-based settings do not.
 
 In the timelapse, cells are about the same size in pixels as in `snap.tif`, so settings tuned on the test image carry over. Some bright debris pushes the maximum intensity to ~1134 against a much lower background, so each frame is scaled to 8-bit by percentiles (0.5–99.8%) before segmentation.
 
@@ -81,7 +108,7 @@ micro-sam enlarges every input (each tile, or the whole image) to 1024 pixels be
 | Setting | Cells found | Time per frame | Effective scale in the model | Verdict |
 |---|---|---|---|---|
 | Full res, 256 tiles | 827 | 1011 s (~17 min) | ~2.7× | Best, but ~21 h for the stack |
-| **Full res, 512 tiles** | **735** | **288 s (~4.8 min)** | ~1.6× | **Chosen.** Outlines close to 256 tiles; ~6 h for the stack |
+| **Full res, 512 tiles** | **735** | **288 s (~4.8 min)**; 273–286 s on frames 2–3 | ~1.6× | **Chosen.** Outlines close to 256 tiles; ~6 h for the stack |
 | Frame resized to 1024×1024, no tiles | 200 | 19 s | 0.5× | Rejected: misses most cells |
 | Frame resized to 512×512, no tiles | 145 | 21 s | 0.5× | Rejected: misses most cells, merges neighbours into blobs |
 
@@ -129,7 +156,7 @@ Model weights are downloaded on first use and cached outside the project:
 ## Open decisions and next steps
 
 1. Finish the 512-tile run on CPU (~6 h) and check the label stack in Fiji.
-2. Link cells over time with TrackMate (Fiji at `C:\Fiji.app`, TrackMate 8.1.6): see [tracking-plan.md](tracking-plan.md).
+2. Link cells over time with TrackMate (Fiji at `C:\Fiji.app`, TrackMate 8.1.6), using 0.653 µm/pixel and 180 s/frame: see [tracking-plan.md](tracking-plan.md).
 3. Check micro-sam output on a few more frames and positions, including the other acquisitions (`justcells2d_1`, `justcells2d_2`, `pollen1012`).
 4. Optionally filter round, bright objects (likely detached or dead cells) by shape if they should not be counted.
 5. If segmentation needs improving, correct results in micro-sam's napari annotator, or fine-tune Cellpose or micro-sam on a few hand-corrected frames.

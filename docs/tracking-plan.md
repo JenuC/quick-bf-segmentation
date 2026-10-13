@@ -2,7 +2,7 @@
 
 Goal: turn the per-frame micro-sam label stack into cell tracks (positions, shapes and lineages over time) for `justcells2d_brightfield_1` Pos0, then reuse the same steps for other positions and acquisitions.
 
-Status: planned, not started. It starts once the label stack from the 512-tile run exists (see [discussion.md](discussion.md)).
+Status: planned, not started. It starts once the label stack from the 512-tile run exists (running; frames 1–3 of 75 done, see [discussion.md](discussion.md)).
 
 ## Inputs
 
@@ -10,9 +10,10 @@ Status: planned, not started. It starts once the label stack from the 512-tile r
 |---|---|---|
 | Label stack | `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0_microsam_tile512_labels.tif` (75 × 2048 × 2048, uint16, TYX) | `segment-microsam-stack.py --tile 512` |
 | Raw brightfield (for checking by eye) | `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0.ome.tif` | Micro-Manager |
-| Pixel size | 0.653 µm | `PixelSizeUm` in `..._metadata.txt` |
-| Frame interval | 180 s (3 min) | `Interval_ms`; `ElapsedTime-ms` confirms ~180 s steps |
-| Duration | 75 frames ≈ 3.7 h (planned 100, stopped at 75) | metadata |
+| Pixel size | 0.653 µm | `PixelSizeUm` in `..._metadata.txt` (reported by `parse-metadata.py`) |
+| Frame interval | 180 s (3 min); measured 179.88–180.11 s, no missing frames or irregular gaps | `uv run parse-metadata.py justcells2d_brightfield_1` |
+| Duration | 75 frames = 3.70 h (planned 100, stopped at 75) | same |
+| Per-frame times | `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0_metadata_times.csv` | `parse-metadata.py --csv` |
 | Software | Fiji at `C:\Fiji.app`, TrackMate 8.1.6 | already installed |
 
 The label stack is written without calibration, so pixel size and frame interval must be set before tracking. Either set them in Fiji (Image > Properties) or have the tracking script set them.
@@ -94,4 +95,4 @@ From the CSV exports:
 4. Check by eye; tune parameters; record final parameters in this file.
 5. Write `scripts/trackmate_labels.py` (Jython) and run it headless on the full stack.
 6. Write Python analysis of the CSV exports.
-7. Extend to other positions and acquisitions.
+7. Extend to other positions and acquisitions. Note that `justcells2d_1` and `justcells2d_2` use 0.6938 µm/pixel and 300 s/frame: keep linking distances in µm and rescale them per acquisition, since cells move further in 5 min than in 3 min.
