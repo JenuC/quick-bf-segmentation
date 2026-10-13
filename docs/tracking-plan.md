@@ -2,7 +2,7 @@
 
 Goal: turn the per-frame micro-sam label stack into cell tracks (positions, shapes and lineages over time) for `justcells2d_brightfield_1` Pos0, then reuse the same steps for other positions and acquisitions.
 
-Status: planned, not started. It starts once the label stack from the 512-tile run exists (running; frames 1–3 of 75 done, see [discussion.md](discussion.md)).
+Status: the label stack is ready (75 frames, 654–769 cells per frame). A first TrackMate run gave track speeds in pixels/frame because the stack was not calibrated yet; it is calibrated now.
 
 ## Inputs
 
@@ -16,7 +16,9 @@ Status: planned, not started. It starts once the label stack from the 512-tile r
 | Per-frame times | `justcells2d_brightfield_1/justcells2d_brightfield_1_MMStack_Pos0_metadata_times.csv` | `parse-metadata.py --csv` |
 | Software | Fiji at `C:\Fiji.app`, TrackMate 8.1.6 | already installed |
 
-The label stack is written without calibration, so pixel size and frame interval must be set before tracking. Either set them in Fiji (Image > Properties) or have the tracking script set them.
+The label stack carries the calibration (0.653 µm/pixel, 180 s/frame), written from the Micro-Manager metadata. Check Image > Properties in Fiji shows it before tracking.
+
+`plot-speed-histogram.py` converts an exported TrackMate speed CSV from pixels/frame to µm/min (for uncalibrated runs) and plots a histogram. First run: median track speed 0.80 µm/min (48 µm/h), range 0.06–3.26 µm/min, 544 tracks. The highest value, 14.97 px/frame, sits just under 15 px; if the max linking distance was 15 px, it is capping the fast tail. Raise it and recheck.
 
 ## Approach
 
@@ -89,7 +91,7 @@ From the CSV exports:
 
 ## Steps
 
-1. Wait for the 512-tile label stack (running; ~6 h on CPU).
+1. ~~Wait for the 512-tile label stack.~~ Done.
 2. Open labels and raw data in Fiji. Set calibration. Check it reads as T = 75.
 3. Run TrackMate in the GUI on frames 1–20: Label image detector, filter spots, LAP tracker. Compare with the Overlap tracker.
 4. Check by eye; tune parameters; record final parameters in this file.

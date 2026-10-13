@@ -15,6 +15,7 @@ Always run with --extra gpu, or uv run switches torch back to the CPU build:
         [--model vit_b_lm] [--tile 512] [--batch 8] [--frames 0:10]
 """
 
+import json
 import sys
 import time
 from pathlib import Path
@@ -94,7 +95,19 @@ done = sorted(frame_dir.glob("t*.tif"))
 if len(done) == n_frames:
     stack = np.stack([tf.imread(f) for f in done])
     out = path.parent / f"{stem}_microsam_tile{tile}_labels.tif"
-    tf.imwrite(out, stack, imagej=True, metadata={"axes": "TYX"}, compression="zlib")
+    # Calibrate from the Micro-Manager metadata so Fiji/TrackMate report um and seconds
+    calib = {}
+    meta_path = path.parent / f"{stem}_metadata.txt"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        frame = next(v for k, v in meta.items() if k.startswith("FrameKey-"))
+        um = frame["PixelSizeUm"]
+        calib = {"resolution": (1 / um, 1 / um)}
+        metadata = {"axes": "TYX", "unit": "um", "finterval": meta["Summary"]["Interval_ms"] / 1000, "tunit": "sec"}
+    else:
+        print(f"no {meta_path.name}; label stack saved without calibration")
+        metadata = {"axes": "TYX"}
+    tf.imwrite(out, stack, imagej=True, metadata=metadata, compression="zlib", **calib)
     print(f"saved {out}")
 else:
     print(f"{len(done)}/{n_frames} frames done; rerun to continue")
