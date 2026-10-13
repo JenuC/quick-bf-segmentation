@@ -1,5 +1,6 @@
 [project]
-name = "20261012-flucolandcells"
+name = "quick-bf-segmentation"
+site = "git remote add origin https://github.com/JenuC/quick-bf-segmentation.git"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
