@@ -4,15 +4,15 @@ Same output as segment-microsam-stack.py, but runs on CUDA and sends several
 tiles through the model at once (--batch). micro-sam's tiled mode overlaps
 tiles by a halo and stitches cells that cross tile borders.
 
-Each frame is saved as soon as it finishes (<stack>_microsam_frames/t0000.tif),
+Each frame is saved as soon as it finishes (<stack>_microsam_tile<N>_frames/t0000.tif),
 so an interrupted run resumes where it stopped. When all frames are done they
-are combined into <stack>_microsam_labels.tif next to the input.
+are combined into <stack>_microsam_tile<N>_labels.tif next to the input.
 
 Setup on the GPU machine (installs CUDA builds of torch):
     uv sync --extra gpu
 Always run with --extra gpu, or uv run switches torch back to the CPU build:
     uv run --extra gpu segment-microsam-stack-gpu.py <stack.tif>
-        [--model vit_b_lm] [--tile 256] [--batch 8] [--frames 0:10]
+        [--model vit_b_lm] [--tile 512] [--batch 8] [--frames 0:10]
 """
 
 import sys
@@ -45,7 +45,7 @@ def opt(name, default):
 path = Path(next(a for a in args if not a.startswith("--") and a not in
                  {opt(o, None) for o in ("--model", "--tile", "--batch", "--frames")}))
 model_type = opt("--model", "vit_b_lm")
-tile = int(opt("--tile", 256))
+tile = int(opt("--tile", 512))
 batch_size = int(opt("--batch", 8))
 halo = tile // 4
 
@@ -57,7 +57,7 @@ if "--frames" in args:
     frames = range(int(start or 0), min(int(stop or n_frames), n_frames))
 
 stem = path.name.removesuffix(".ome.tif").removesuffix(".tif")
-frame_dir = path.parent / f"{stem}_microsam_frames"
+frame_dir = path.parent / f"{stem}_microsam_tile{tile}_frames"
 frame_dir.mkdir(exist_ok=True)
 
 
@@ -93,7 +93,7 @@ for t in frames:
 done = sorted(frame_dir.glob("t*.tif"))
 if len(done) == n_frames:
     stack = np.stack([tf.imread(f) for f in done])
-    out = path.parent / f"{stem}_microsam_labels.tif"
+    out = path.parent / f"{stem}_microsam_tile{tile}_labels.tif"
     tf.imwrite(out, stack, imagej=True, metadata={"axes": "TYX"}, compression="zlib")
     print(f"saved {out}")
 else:

@@ -1,13 +1,13 @@
-"""Segment every frame of a timelapse TIFF stack with micro-sam, in 256x256 tiles (CPU).
+"""Segment every frame of a timelapse TIFF stack with micro-sam, in tiles (CPU).
 
-micro-sam's tiled mode runs the model on 256x256 tiles with an overlapping
+micro-sam's tiled mode runs the model on --tile x --tile tiles (default 512) with an overlapping
 halo and stitches cells that cross tile borders, so cells aren't cut at seams.
 
-Each frame is saved as soon as it finishes (<stack>_microsam_frames/t0000.tif),
+Each frame is saved as soon as it finishes (<stack>_microsam_tile<N>_frames/t0000.tif),
 so an interrupted run resumes where it stopped. When all frames are done they
-are combined into <stack>_microsam_labels.tif next to the input.
+are combined into <stack>_microsam_tile<N>_labels.tif next to the input.
 
-Usage: uv run segment-microsam-stack.py <stack.tif> [--model vit_b_lm] [--frames 0:10]
+Usage: uv run segment-microsam-stack.py <stack.tif> [--model vit_b_lm] [--tile 512] [--frames 0:10]
 """
 
 import sys
@@ -21,22 +21,29 @@ from micro_sam.automatic_segmentation import (
     automatic_instance_segmentation,
 )
 
-TILE = (256, 256)
 HALO = (64, 64)
 
 args = sys.argv[1:]
-path = Path(next(a for a in args if not a.startswith("--")))
-model_type = args[args.index("--model") + 1] if "--model" in args else "vit_b_lm"
+
+
+def opt(name, default):
+    return args[args.index(name) + 1] if name in args else default
+
+
+option_values = {opt(o, None) for o in ("--model", "--tile", "--frames")}
+path = Path(next(a for a in args if not a.startswith("--") and a not in option_values))
+model_type = opt("--model", "vit_b_lm")
+tile = int(opt("--tile", 512))
 
 with tf.TiffFile(path) as fid:
     n_frames = len(fid.series[0].pages)
 frames = range(n_frames)
 if "--frames" in args:
-    start, stop = args[args.index("--frames") + 1].split(":")
+    start, stop = opt("--frames", ":").split(":")
     frames = range(int(start or 0), min(int(stop or n_frames), n_frames))
 
 stem = path.name.removesuffix(".ome.tif").removesuffix(".tif")
-frame_dir = path.parent / f"{stem}_microsam_frames"
+frame_dir = path.parent / f"{stem}_microsam_tile{tile}_frames"
 frame_dir.mkdir(exist_ok=True)
 
 
@@ -61,7 +68,7 @@ for t in frames:
         segmenter=segmenter,
         input_path=img,
         ndim=2,
-        tile_shape=TILE,
+        tile_shape=(tile, tile),
         halo=HALO,
         verbose=False,
     )
@@ -71,7 +78,7 @@ for t in frames:
 done = sorted(frame_dir.glob("t*.tif"))
 if len(done) == n_frames:
     stack = np.stack([tf.imread(f) for f in done])
-    out = path.parent / f"{stem}_microsam_labels.tif"
+    out = path.parent / f"{stem}_microsam_tile{tile}_labels.tif"
     tf.imwrite(out, stack, imagej=True, metadata={"axes": "TYX"}, compression="zlib")
     print(f"saved {out}")
 else:
